@@ -28,11 +28,9 @@ for i in range(n):
 b = sum3/n
 
 # 画图
-fig = plt.figure()
-ax1 = fig.add_subplot(1,1, 1)
 for i in range(n):
-    ax1.scatter(lst[i][0],lst[i][1],marker = "x", color = "green")  # type: ignore
+    plt.scatter(lst[i][0],lst[i][1],marker = "x", color = "red")  # type: ignore
 x = np.linspace(0,100)
 y = x * w + b
-ax1.plot(x,y)
+plt.plot(x,y)
 plt.show()
