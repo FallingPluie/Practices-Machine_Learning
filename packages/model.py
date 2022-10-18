@@ -130,7 +130,7 @@ class logistic:
     def get(self) -> tuple[list, float]:
         """
         Returns:
-            tuple[np.ndarray,float]: (w,b)
+            tuple[list,float]: (w,b)
                 w:权重
                 b:偏置
         """
