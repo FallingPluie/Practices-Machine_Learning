@@ -1,5 +1,7 @@
 import numpy as np
 import random
+import time
+from math import sqrt
 
 class perceptron:
     def __init__(self, learn_rate:float = 1.0) -> None:
@@ -149,17 +151,19 @@ class backpropagation:
 
     def defualt(self,d:int,q:int,l:int) -> None:
         """
-        全1初始化所有权重与阈值
+        随机初始化所有权重与阈值
 
         Args:
             d (int): 每个训练集中输入层单元的数量
             q (int): 每个训练集中隐藏层单元的数量
             l (int): 每个训练集中输出层单元的数量
+
+            通常取q = sqrt(d + l) + c, 其中c为[1,10]任意实数
         """
-        self.__v = np.ones((q,d))
-        self.__t = np.ones(q)
-        self.__w = np.ones((l,q))
-        self.__b = np.ones(l)
+        self.__v = np.random.random((q,d))
+        self.__t = np.random.random(q)
+        self.__w = np.random.random((l,q))
+        self.__b = np.random.random(l)
         self.__d = d
         self.__q = q
         self.__l = l
@@ -179,11 +183,13 @@ class backpropagation:
             d: 每个训练集中输入层单元的数量
             q: 每个训练集中隐藏层单元的数量
             l: 每个训练集中输出层单元的数量
+
+            通常取q = sqrt(d + l) + c, 其中c为[1,10]任意实数
         """
         try:
-            tq,fff = t.shape
-            bl,fff = b.shape
-            print("初始化失败, 阈值非一维数组, 检查输入数据")
+            tq,_ = t.shape
+            bl,_ = b.shape
+            print("(model.backpropagation.initialize)初始化失败, 阈值非一维数组, 检查输入数据")
         except:
             try:
                 vq,vd = v.shape
@@ -200,9 +206,9 @@ class backpropagation:
                     self.__l = wl
                     self.__initialized = 1
                 else:
-                    print("初始化失败, 数据规格不互相匹配, 检查输入数据")
+                    print("(model.backpropagation.initialize)初始化失败, 数据规格不互相匹配, 检查输入数据")
             except:
-                print("初始化失败, 数据规格不符, 检查输入数据")
+                print("(model.backpropagation.initialize)初始化失败, 数据规格不符, 检查输入数据")
 
     def fx(self,z:float) -> np.ndarray:
         """
@@ -213,12 +219,12 @@ class backpropagation:
         else:
             return np.exp(z)/(np.exp(z)+1) # 避免因exp(z)过大导致数据溢出
 
-    def yp(self,x:np.ndarray) -> tuple[np.ndarray,np.ndarray]:
+    def hyout(self,x:np.ndarray) -> tuple[np.ndarray,np.ndarray]:
         """
         计算求得模型隐藏层与输出层的输出值
 
         Args:
-            x (np.ndarray): 单个训练例的全部输出x, 一维矩阵
+            x (np.ndarray): 单个训练例的全部输入x, 一维矩阵
 
         Returns:
             tuple[np.ndarray,np.ndarray]: hout, yout
@@ -229,9 +235,9 @@ class backpropagation:
             print("未初始化模型")
             return np.zeros(1),np.zeros(1)
         alpha = np.array([np.dot(self.__v[i],x) for i in range(self.__q)])
-        h = alpha - self.__t
+        h = np.array([self.fx(alpha[i] - self.__t[i]) for i in range(self.__q)])
         beta = np.array([np.dot(h,self.__w[i]) for i in range(self.__l)])
-        yout = np.array([self.fx(beta[i] - self.__b[i]) for i in range(self.__l)]) # y预测输出
+        yout = np.array([self.fx(beta[i] - self.__b[i]) for i in range(self.__l)])# y预测输出
         return h,yout
 
     def __update(self,x:np.ndarray,y:np.ndarray) -> None:
@@ -242,10 +248,10 @@ class backpropagation:
             x (np.ndarray): 单个训练例的全部输入
             y (np.ndarray): 单个训练例的全部输出
         """
-        h,yout = self.yp(x)
+        h,yout = self.hyout(x)
         g = np.array([yout[i]*(1-yout[i])*(y[i]-yout[i]) for i in range(self.__l)])
-        e = np.array([(h[i]*(1-h[i]) * np.sum(np.array([g[j]*self.__w[j][i] for j in range(self.__l)]))) for i in range(self.__q)]) # g,e公式见周志华《机器学习》.清华大学出版社.2016 p103
-        #print(g,e)
+        e = np.array([(h[i]*(1-h[i]) * np.sum(np.array([g[j]*self.__w[j][i] for j in range(self.__l)]))) for i in range(self.__q)])
+        # g,e公式见周志华《机器学习》.清华大学出版社.2016 p103
         for i in range(self.__l):
             for j in range(self.__q):
                 self.__w[i][j] = self.__w[i][j] + self.n1*g[i]*h[j]
@@ -254,30 +260,85 @@ class backpropagation:
                 self.__t[j] = self.__t[j] - self.n2*e[j]
             self.__b[i] = self.__b[i] - self.n1*g[i]
 
-    def train(self,x:np.ndarray,y:np.ndarray,n:int = 10000) -> None:
+    def __fit(self,x:np.ndarray,y:np.ndarray,n:int) -> None:
         """
         训练BP神经网络
 
         Args:
             x (np.ndarray): 输入集, 二维矩阵
             y (np.ndarray): 输出集, 二维矩阵
-            n (int): 训练次数, 默认为10000
+            n (int): 训练次数
         """
-        xm,d = x.shape
-        ym,l = y.shape
+        progress = "="
+        tper = n/20
+        print("[{0:<20}], eta:          ".format(""),end = "")
+        t1 = time.perf_counter()
+        ### 以上部分为进度条
+        index = list(range(len(x)))
+        for count in range(n):
+            random.shuffle(index)
+            for i in index: # type: ignore
+                self.__update(x[i],y[i])
+        ### 以下部分为进度条
+            s = (count+1)/tper-len(progress)
+            t2 = time.perf_counter()
+            t = str(round((n-count-1)*(t2 - t1)/(count+1),1))+'s'
+            if s > 1e-3:
+                print("\r[{0:<20}], eta:{1:<10}".format(progress,t),end = "")
+                for i in range(int(s)+1):progress += "="
+            else:
+                print("\b\b\b\b\b\b\b\b\b\b\b\b\b\beta:{0:<10}".format(t),end="")
+        print("\r[{0:=<20}], 已完成           ".format("="))
+
+    def train(self,x:np.ndarray,y:np.ndarray,n:int = 1000, s_fold:int = 1) -> None:
+        """
+        训练BP神经网络
+
+        Args:
+            x (np.ndarray): 输入集, 二维矩阵
+            y (np.ndarray): 输出集, 二维矩阵
+            n (int): 每次验证训练次数, 默认为1000
+            s_fold (int): s折交叉验证分割子集数, 小于等于1则不分割
+        """
+        # 主要为检查数据合法性与完成s折交叉验证
+        try:
+            xm,d = x.shape
+            ym,l = y.shape
+        except:
+            print("(model.backpropagation.train)数据规格不符")
+            return None
         if xm != ym:
-            print("训练例特征与标签数不等, 终止运行")
+            print("(model.backpropagation.train)训练例特征与标签数不等, 终止运行")
             return None
         if self.__initialized == 0:
-            print("未初始化, 以 隐藏层单元数量: 2 全1初始化所有权重与阈值")
-            self.defualt(d,2,l)
+            q = int(sqrt(d*l))+2
+            print("(model.backpropagation.train)未初始化, 以 隐藏层单元数量: {0} 随机初始化所有权重与阈值".format(q))
+            self.defualt(d,q,l)
         elif d != self.__d or l != self.__l:
-            print("输入x或y大小与初始化值不符, 现以 输入层单元数量: {0}, 隐藏层单元数量: {1}, 输出层单元数量: {2} 全1初始化所有权重与阈值".format(d,self.__q,l))
+            print("(model.backpropagation.train)输入x或y大小与初始化值不符, 现以 输入层单元数量: {0}, 隐藏层单元数量: {1}, 输出层单元数量: {2} 随机初始化所有权重与阈值".format(d,self.__q,l))
             self.defualt(d,self.__q,l)
-        for count in range(n):
-            for i in range(xm): # type: ignore
-                self.__update(x[i],y[i])
-            if (count+1) % 2500 == 0: print(count + 1)
+
+        if s_fold <= 1:
+            self.__fit(x,y,n)
+        else:
+            loss = -1
+            step = int(len(x)/s_fold)
+            state = np.random.get_state()
+            np.random.shuffle(x)
+            np.random.set_state(state)
+            np.random.shuffle(y)
+            temp_v,temp_t,temp_w,temp_b = self.__v, self.__t, self.__w, self.__b
+            for i in range(s_fold):
+                print("第 {0}/{1} 次:".format(i+1,s_fold))
+                tstx,tsty = x[(s_fold-i-1)*step:(s_fold-i)*step],y[(s_fold-i-1)*step:(s_fold-i)*step]
+                tx = np.delete(x,np.s_[(s_fold-i-1)*step:(s_fold-i)*step],0)
+                ty = np.delete(y,np.s_[(s_fold-i-1)*step:(s_fold-i)*step],0)
+                self.__fit(tx,ty,n)
+                evaluate = self.evaluate(tstx,tsty)
+                if loss < 0 or loss > evaluate:
+                    temp_v,temp_t,temp_w,temp_b = self.__v, self.__t, self.__w, self.__b
+                    loss = evaluate
+            self.__v, self.__t, self.__w, self.__b = temp_v,temp_t,temp_w,temp_b
 
     def get(self) -> tuple[np.ndarray,np.ndarray,np.ndarray,np.ndarray]:
         """
@@ -290,7 +351,41 @@ class backpropagation:
                 w: 隐藏层到输出层的权重, 二维数组
                 b: 输出层的阈值, 一维数组
         """
-        if self.__initialized == 0: return self.__v,self.__t,self.__w,self.__b
+        if self.__initialized == 1: return self.__v,self.__t,self.__w,self.__b
         else:
-            print("未初始化模型")
+            print("(model.backpropagation.get)未初始化模型")
             return np.zeros(1),np.zeros(1),np.zeros(1),np.zeros(1)
+
+    def evaluate(self,x:np.ndarray,y:np.ndarray) -> float:
+        """
+        评估当前模型对某一测试集的平方差和
+
+        Args:
+            x (np.ndarray): 输入集, 二维矩阵
+            y (np.ndarray): 输出集, 二维矩阵
+
+        Returns:
+            float: 损失, 平方差和
+        """
+        try:
+            xm,d = x.shape
+            ym,l = y.shape
+        except:
+            print("(model.backpropagation.evaluate)数据规格不符")
+            return -1
+        if xm != ym:
+            print("(model.backpropagation.evaluate)训练例特征与标签数不等")
+            return -1
+        elif d != self.__d:
+            print("(model.backpropagation.evaluate)输入单元数与模型不匹配")
+            return -1
+        elif l != self.__l:
+            print("(model.backpropagation.evaluate)输出单元数与模型不匹配")
+            return -1
+
+        loss = 0
+        for i in range(len(x)):
+            _,y0 = self.hyout(x[i])
+            for j in range(len(y0)):
+                loss += pow(y[i][j]-y0[j],2)
+        return loss
