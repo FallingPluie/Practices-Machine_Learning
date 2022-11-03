@@ -6,7 +6,7 @@ d1 = dg.linear(-1,1)
 lst,tst = d1.classify(20,5,label = True)
 x = np.array([[i[0][0],i[0][1]/10] for i in lst])
 y = np.array([[i[1]] for i in lst])
-a1 = model.backpropagation()
+a1 = model.backpropagation(decay_rate=1)
 a1.defualt(2,3,1)
 a1.train(x,y,1500,3)
 

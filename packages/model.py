@@ -1,7 +1,7 @@
 import numpy as np
 import random
-import time
 from math import sqrt
+from tqdm import trange
 
 class perceptron:
     def __init__(self, learn_rate:float = 1.0) -> None:
@@ -137,17 +137,19 @@ class logistic:
         return [self.__w[0],self.__w[1]],self.__w[2]
 
 class backpropagation:
-    def __init__(self,n1:float = 0.5,n2:float = 0.5) -> None:
+    def __init__(self,n1:float = 0.5,n2:float = 0.5,decay_rate:float = 0.5) -> None:
         """
         创建未初始化单隐藏层BP神经网络
 
         Augs:
             n1 (float): 隐藏层到输出层学习率, (0,1)
             n2 (float): 输入层到隐藏层学习率, (0,1)
+            decay_rate (float): 每次迭代后学习率的衰弱率, (0,1]
         """
         self.__initialized = 0
         self.n1 = n1
         self.n2 = n2
+        self.decay_rate = decay_rate
 
     def defualt(self,d:int,q:int,l:int) -> None:
         """
@@ -160,10 +162,10 @@ class backpropagation:
 
             通常取q = sqrt(d + l) + c, 其中c为[1,10]任意实数
         """
-        self.__v = np.random.random((q,d))
-        self.__t = np.random.random(q)
-        self.__w = np.random.random((l,q))
-        self.__b = np.random.random(l)
+        self.__v = np.random.randn(q,d)
+        self.__t = np.random.randn(q)
+        self.__w = np.random.randn(l,q)
+        self.__b = np.random.randn(l)
         self.__d = d
         self.__q = q
         self.__l = l
@@ -210,7 +212,7 @@ class backpropagation:
             except:
                 print("(model.backpropagation.initialize)初始化失败, 数据规格不符, 检查输入数据")
 
-    def fx(self,z:float) -> np.ndarray:
+    def fx(self,z:float) -> float:
         """
         logistic函数 g(z)
         """
@@ -234,9 +236,9 @@ class backpropagation:
         if self.__initialized == 0:
             print("未初始化模型")
             return np.zeros(1),np.zeros(1)
-        alpha = np.array([np.dot(self.__v[i],x) for i in range(self.__q)])
+        alpha = np.dot(x,self.__v.T)
         h = np.array([self.fx(alpha[i] - self.__t[i]) for i in range(self.__q)])
-        beta = np.array([np.dot(h,self.__w[i]) for i in range(self.__l)])
+        beta = np.dot(h,self.__w.T)
         yout = np.array([self.fx(beta[i] - self.__b[i]) for i in range(self.__l)])# y预测输出
         return h,yout
 
@@ -249,16 +251,15 @@ class backpropagation:
             y (np.ndarray): 单个训练例的全部输出
         """
         h,yout = self.hyout(x)
-        g = np.array([yout[i]*(1-yout[i])*(y[i]-yout[i]) for i in range(self.__l)])
-        e = np.array([(h[i]*(1-h[i]) * np.sum(np.array([g[j]*self.__w[j][i] for j in range(self.__l)]))) for i in range(self.__q)])
+        g = np.atleast_2d(yout*(1-yout)*(y-yout)) # type:ignore
+        e = np.atleast_2d(h*(1-h)*np.dot(g,self.__w))
         # g,e公式见周志华《机器学习》.清华大学出版社.2016 p103
-        for i in range(self.__l):
-            for j in range(self.__q):
-                self.__w[i][j] = self.__w[i][j] + self.n1*g[i]*h[j]
-                for s in range(self.__d):
-                    self.__v[j][s] = self.__v[j][s] + self.n2*e[j]*x[s]
-                self.__t[j] = self.__t[j] - self.n2*e[j]
-            self.__b[i] = self.__b[i] - self.n1*g[i]
+        h = np.atleast_2d(h)
+        x = np.atleast_2d(x)
+        self.__w = self.__w+self.n1*np.dot(g.T,h)
+        self.__b = self.__b-self.n1*g[0]
+        self.__v = self.__v+self.n2*np.dot(e.T,x)
+        self.__t = self.__t-self.n2*e[0]
 
     def __fit(self,x:np.ndarray,y:np.ndarray,n:int) -> None:
         """
@@ -269,35 +270,25 @@ class backpropagation:
             y (np.ndarray): 输出集, 二维矩阵
             n (int): 训练次数
         """
-        progress = "="
-        tper = n/20
-        print("[{0:<20}], eta:          ".format(""),end = "")
-        t1 = time.perf_counter()
-        ### 以上部分为进度条
-        index = list(range(len(x)))
-        for count in range(n):
-            random.shuffle(index)
-            for i in index: # type: ignore
-                self.__update(x[i],y[i])
-        ### 以下部分为进度条
-            s = (count+1)/tper-len(progress)
-            t2 = time.perf_counter()
-            t = str(round((n-count-1)*(t2 - t1)/(count+1),1))+'s'
-            if s > 1e-3:
-                print("\r[{0:<20}], eta:{1:<10}".format(progress,t),end = "")
-                for i in range(int(s)+1):progress += "="
-            else:
-                print("\b\b\b\b\b\b\b\b\b\b\b\b\b\beta:{0:<10}".format(t),end="")
-        print("\r[{0:=<20}], 已完成           ".format("="))
+        le = len(y)
+        index = list(range(le))
+        random.shuffle(index)
+        for count in trange(n*le,desc='训练中'):
+            rest = (count+1)%le
+            i = index[rest]
+            self.__update(x[i],y[i])
+            if rest == 0:
+                random.shuffle(index)
+                self.n1,self.n2 = self.n1*self.decay_rate,self.n2*self.decay_rate
 
-    def train(self,x:np.ndarray,y:np.ndarray,n:int = 1000, s_fold:int = 1) -> None:
+    def train(self,x:np.ndarray,y:np.ndarray,epoch:int = 10, s_fold:int = 1) -> None:
         """
         训练BP神经网络
 
         Args:
             x (np.ndarray): 输入集, 二维矩阵
             y (np.ndarray): 输出集, 二维矩阵
-            n (int): 每次验证训练次数, 默认为1000
+            epoch (int): 迭代次数
             s_fold (int): s折交叉验证分割子集数, 小于等于1则不分割
         """
         # 主要为检查数据合法性与完成s折交叉验证
@@ -319,7 +310,7 @@ class backpropagation:
             self.defualt(d,self.__q,l)
 
         if s_fold <= 1:
-            self.__fit(x,y,n)
+            self.__fit(x,y,epoch)
         else:
             loss = -1
             step = int(len(x)/s_fold)
@@ -333,7 +324,7 @@ class backpropagation:
                 tstx,tsty = x[(s_fold-i-1)*step:(s_fold-i)*step],y[(s_fold-i-1)*step:(s_fold-i)*step]
                 tx = np.delete(x,np.s_[(s_fold-i-1)*step:(s_fold-i)*step],0)
                 ty = np.delete(y,np.s_[(s_fold-i-1)*step:(s_fold-i)*step],0)
-                self.__fit(tx,ty,n)
+                self.__fit(tx,ty,epoch)
                 evaluate = self.evaluate(tstx,tsty)
                 if loss < 0 or loss > evaluate:
                     temp_v,temp_t,temp_w,temp_b = self.__v, self.__t, self.__w, self.__b
