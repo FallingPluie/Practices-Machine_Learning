@@ -261,7 +261,7 @@ class backpropagation:
         self.__v = self.__v+self.n2*np.dot(e.T,x)
         self.__t = self.__t-self.n2*e[0]
 
-    def __fit(self,x:np.ndarray,y:np.ndarray,n:int) -> None:
+    def __fit(self,x:np.ndarray,y:np.ndarray,n:int,progressbar:bool = True,printloss:bool = False) -> None:
         """
         训练BP神经网络
 
@@ -269,19 +269,25 @@ class backpropagation:
             x (np.ndarray): 输入集, 二维矩阵
             y (np.ndarray): 输出集, 二维矩阵
             n (int): 训练次数
+            progressbar (bool): 是否显示进度条
+            printloss (bool): 是否在每epoch后打印平方均差损失
         """
         le = len(y)
+        if progressbar:ran = trange
+        else:ran = range
         index = list(range(le))
         random.shuffle(index)
-        for count in trange(n*le,desc='训练中'):
-            rest = (count+1)%le
-            i = index[rest]
-            self.__update(x[i],y[i])
-            if rest == 0:
-                random.shuffle(index)
-                self.n1,self.n2 = self.n1*self.decay_rate,self.n2*self.decay_rate
+        for epoch in range(n):
+            if progressbar:print('Epoch:',epoch+1)
+            for count in ran(le):
+                i = index[count]
+                self.__update(x[i],y[i])
+            if printloss:print('loss:{0:.5f}'.format(self.evaluate(x,y)))
+            random.shuffle(index)
+            self.n1,self.n2 = self.n1*self.decay_rate,self.n2*self.decay_rate
 
-    def train(self,x:np.ndarray,y:np.ndarray,epoch:int = 10, s_fold:int = 1) -> None:
+    def train(self,x:np.ndarray,y:np.ndarray,epoch:int = 10, s_fold:int = 1,
+              progressbar:bool = True, printloss:bool = False) -> None:
         """
         训练BP神经网络
 
@@ -290,6 +296,8 @@ class backpropagation:
             y (np.ndarray): 输出集, 二维矩阵
             epoch (int): 迭代次数
             s_fold (int): s折交叉验证分割子集数, 小于等于1则不分割
+            progressbar (bool): 是否显示进度条
+            printloss (bool): 是否在每epoch后打印平方均差损失
         """
         # 主要为检查数据合法性与完成s折交叉验证
         try:
@@ -310,7 +318,7 @@ class backpropagation:
             self.defualt(d,self.__q,l)
 
         if s_fold <= 1:
-            self.__fit(x,y,epoch)
+            self.__fit(x,y,epoch,progressbar,printloss)
         else:
             loss = -1
             step = int(len(x)/s_fold)
@@ -319,17 +327,19 @@ class backpropagation:
             np.random.set_state(state)
             np.random.shuffle(y)
             temp_v,temp_t,temp_w,temp_b = self.__v, self.__t, self.__w, self.__b
+            up_v,up_t,up_w,up_b = self.__v, self.__t, self.__w, self.__b
             for i in range(s_fold):
-                print("第 {0}/{1} 次:".format(i+1,s_fold))
+                if progressbar:print("第 {0}/{1} 次:".format(i+1,s_fold))
                 tstx,tsty = x[(s_fold-i-1)*step:(s_fold-i)*step],y[(s_fold-i-1)*step:(s_fold-i)*step]
                 tx = np.delete(x,np.s_[(s_fold-i-1)*step:(s_fold-i)*step],0)
                 ty = np.delete(y,np.s_[(s_fold-i-1)*step:(s_fold-i)*step],0)
-                self.__fit(tx,ty,epoch)
+                self.__v, self.__t, self.__w, self.__b = temp_v,temp_t,temp_w,temp_b
+                self.__fit(tx,ty,epoch,progressbar,printloss)
                 evaluate = self.evaluate(tstx,tsty)
                 if loss < 0 or loss > evaluate:
-                    temp_v,temp_t,temp_w,temp_b = self.__v, self.__t, self.__w, self.__b
+                    up_v,up_t,up_w,up_b = self.__v, self.__t, self.__w, self.__b
                     loss = evaluate
-            self.__v, self.__t, self.__w, self.__b = temp_v,temp_t,temp_w,temp_b
+            self.__v, self.__t, self.__w, self.__b = up_v,up_t,up_w,up_b
 
     def get(self) -> tuple[np.ndarray,np.ndarray,np.ndarray,np.ndarray]:
         """
@@ -349,14 +359,14 @@ class backpropagation:
 
     def evaluate(self,x:np.ndarray,y:np.ndarray) -> float:
         """
-        评估当前模型对某一测试集的平方差和
+        评估当前模型对某一测试集的平方均差
 
         Args:
             x (np.ndarray): 输入集, 二维矩阵
             y (np.ndarray): 输出集, 二维矩阵
 
         Returns:
-            float: 损失, 平方差和
+            float: 损失, 平方均差
         """
         try:
             xm,d = x.shape
@@ -374,9 +384,9 @@ class backpropagation:
             print("(model.backpropagation.evaluate)输出单元数与模型不匹配")
             return -1
 
-        loss = 0
-        for i in range(len(x)):
+        loss = np.zeros(l)
+        for i in range(ym):
             _,y0 = self.hyout(x[i])
-            for j in range(len(y0)):
-                loss += pow(y[i][j]-y0[j],2)
-        return loss
+            loss += (y0-y[i])*(y0-y[i]) # type:ignore
+        loss = loss/ym
+        return np.average(loss) #type:ignore
